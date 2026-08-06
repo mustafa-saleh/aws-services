@@ -26,7 +26,10 @@ AWS, Jenkins, Docker, Linux, Git, Java, Maven, Docker Hub, Amazon ECR
 - Create ssh key credentials for EC2 server on Jenkins
 - Extend the previous CI pipeline with deploy step to ssh into the remote EC2 instance and deploy newly built image from Jenkins server
 - Configure security group on EC2 Instance to allow access to our web application
-- 
+- Install Docker Compose on AWS EC2 Instance
+- Create docker-compose.yml file that deploys our web application image
+- Configure Jenkins pipeline to deploy newly built image using Docker Compose on EC2 server
+- Improvement: Extract multiple Linux commands that are executed on remote server into a separate shell script and execute the script from Jenkinsfile
 
 ### Implementation
 
@@ -144,4 +147,57 @@ pipeline {
 ```
 
 Configure the security group on AWS to allow access on port 8080 used by the application.
+
+Navigate to the browser on port 8080 and check the app is running
+
+![Jenkins EC2 Deployment](./images/deploy_jenkins_ec2.png)
+
+#### CD - Deploy Application from Jenkins Pipeline on EC2 Instance (automatically with docker-compose)
+
+Let's create a docker-compose file to start all the services required by the application. First install docker-compose on the EC2 instance
+
+```bash
+sudo curl -L https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m) -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+docker-compose version
+```
+
+Below is "docker-compose.yaml" to run the application and postgres
+
+```yaml
+version: '3.8'
+services:
+    java-maven-app:
+      image: mustafa199b/demo:java-maven-1.0
+      ports:
+        - 8080:8080
+    postgres:
+      image: postgres:15
+      ports:
+        - 5432:5432
+      environment:
+        - POSTGRES_PASSWORD=my-pwd
+```
+
+Stop the running containers on the EC2 instance and modify the deployment stage to use the docker-compose file
+
+```groovy
+...
+        stage("deploy") {
+            steps {
+                script {
+                    echo 'deploying docker image to EC2...'
+                    def dockerComposeCmd = 'docker-compose --detach -f docker-compose.yaml up'
+                    
+                    // sshagent from jenkins plugin "ssh agent"
+                    sshagent(['ec2-server-key']) {
+                        // -o StrictHostKeyChecking=no used to suppress the SSH pop-up
+                        sh "scp docker-compose.yaml ec2-user@3.81.125.74:/home/ec2-user"
+                        sh "ssh -o StrictHostKeyChecking=no ec2-user@3.81.125.74 ${dockerComposeCmd}"
+                    }
+                }
+            }
+        }
+...
+```
 
