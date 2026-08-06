@@ -201,3 +201,46 @@ Stop the running containers on the EC2 instance and modify the deployment stage 
 ...
 ```
 
+If you need to run extra commands (ex: set env vars), use shell script & run it on the EC2 server. create "server-cmds.sh" & copy it to server. To avoid hardcoding the image name in docker-compose file let's pass it as a param to the shell script from jenkinsfile & then export it as env variable in the EC2 instance.
+
+```bash
+#!/usr/bin/env bash
+
+export IMAGE=$1
+docker-compose -f docker-compose.yaml up --detach
+echo "success"
+```
+
+Update the docker-compose file to read IMAGE environment variable
+
+```yaml
+version: '3.8'
+services:
+    java-maven-app:
+      image: ${IMAGE}
+...
+```
+
+We can also refactor the deployment stage to remove any duplicate syntax like below
+
+```groovy
+...
+        stage("deploy") {
+            steps {
+                script {
+                    echo 'deploying docker image to EC2...'
+                    def ec2Instance = "ec2-user@3.81.125.74"
+                    def shellCmd = "bash ./server-cmds.sh ${IMAGE_NAME}"
+                    
+                    // sshagent from jenkins plugin "ssh agent"
+                    sshagent(['ec2-server-key']) {
+                        // -o StrictHostKeyChecking=no used to suppress the SSH pop-up
+                        sh "scp server-cmds.sh ${ec2Instance}:/home/ec2-user"
+                        sh "scp docker-compose.yaml ${ec2Instance}:/home/ec2-user"
+                        sh "ssh -o StrictHostKeyChecking=no ${ec2Instance} ${shellCmd}"
+                    }
+                }
+            }
+        }
+...
+```
