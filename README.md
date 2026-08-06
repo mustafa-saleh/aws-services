@@ -67,5 +67,81 @@ Navigate to the browser & check the app is now running on port 3080
 
 #### CD - Deploy Application from Jenkins Pipeline to EC2 Instance
 
+Create docker file to build the image 
 
+```dockerfile
+FROM amazoncorretto:17-alpine-jdk
+
+EXPOSE 8080
+
+COPY ./target/java-maven-app-1.1.0-SNAPSHOT.jar /usr/app/
+WORKDIR /usr/app
+
+ENTRYPOINT ["java", "-jar", "java-maven-app-1.1.0-SNAPSHOT.jar"]
+```
+
+[Module 8](https://github.com/mustafa-saleh/demo-module-8-build-automation-and-ci-cd-with-jenkins) contains instruction on how to setup Jenkins & create a shared library to build maven projects. Follow the instructions create & configure a Jenkins multibranch pipeline to build & deploy the java project.
+
+Install the Jenkins plugin "SSH Agent" to be used in the pipeline deployment stage. Add (pipeline scoped) SSH credentials in Jenkins to connect to the AWS EC2 instance during the deployment. Select credentials type "SSH Username with Private Key", set the id "ec2-server-key", username "ec2-user" & paste the private key to create the credentials.
+
+Below is the Jenkins file build the app, push the image to github repository & deploy it to AWS EC2. 
+
+```groovy
+library identifier: 'my-shared-library@main', retriever: modernSCM([
+    $class: 'GitSCMSource',
+    remote: 'https://github.com/mustafa-saleh/demo-module-8-jenkins-shared-library.git',
+    credentialsId: 'github-repo'
+])
+
+def gv
+
+pipeline {
+    agent any
+
+    tools {
+        maven 'maven-3.9.16'
+    }
+
+    environment {
+        IMAGE_NAME = 'mustafa199b/demo:java-maven-1.0'
+    }
+
+    stages {
+        stage('build jar') {
+            steps {
+                script {
+                    buildJar()
+                }
+            }
+        }
+
+        stage('build image') {
+            steps {
+                script {
+                    buildImage(env.IMAGE_NAME)
+                    dockerLogin()
+                    dockerPush(env.IMAGE_NAME)
+                }
+            }
+        }
+
+        stage("deploy") {
+            steps {
+                script {
+                    echo 'deploying docker image to EC2...'
+                    def dockerCmd = "docker run -p 8080:8080 -d ${IMAGE_NAME}"
+                    
+                    // sshagent from jenkins plugin "ssh agent"
+                    sshagent(['ec2-server-key']) {
+                        // -o StrictHostKeyChecking=no used to suppress the SSH pop-up
+                        sh "ssh -o StrictHostKeyChecking=no ec2-user@3.81.125.74 ${dockerCmd}"
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+Configure the security group on AWS to allow access on port 8080 used by the application.
 
