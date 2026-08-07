@@ -17,22 +17,22 @@ pipeline {
     //     IMAGE_NAME = 'mustafa199b/demo:java-maven-1.0'
     // }
 
-    stage('increment version') {
-        steps {
-            script {
-                echo "incrementing the version..."
-                sh 'mvn build-helper:parse-version versions:set \
-                -DnewVersion=\\\${parsedVersion.majorVersion}.\\\${parsedVersion.minorVersion}.\\\${parsedVersion.nextIncrementalVersion} \
-                versions:commit'
-                def matcher = readFile('pom.xml') =~ '<version>(.+)</version>'
-                def version = matcher[0][1]
-                echo "new version is: ${version}"
-                env.IMAGE_NAME = "$version-$BUILD_NUMBER"
+    stages {
+        stage('increment version') {
+            steps {
+                script {
+                    echo "incrementing the version..."
+                    sh 'mvn build-helper:parse-version versions:set \
+                    -DnewVersion=\\\${parsedVersion.majorVersion}.\\\${parsedVersion.minorVersion}.\\\${parsedVersion.nextIncrementalVersion} \
+                    versions:commit'
+                    def matcher = readFile('pom.xml') =~ '<version>(.+)</version>'
+                    def version = matcher[0][1]
+                    echo "new version is: ${version}"
+                    env.IMAGE_NAME = "$version-$BUILD_NUMBER"
+                }
             }
         }
-    }
-
-    stages {
+        
         stage('build jar') {
             steps {
                 script {
