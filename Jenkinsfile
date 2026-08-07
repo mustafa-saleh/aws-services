@@ -28,11 +28,11 @@ pipeline {
                     def matcher = readFile('pom.xml') =~ '<version>(.+)</version>'
                     def version = matcher[0][1]
                     echo "new version is: ${version}"
-                    env.IMAGE_NAME = "$version-$BUILD_NUMBER"
+                    env.IMAGE_NAME = "mustafa199b/demo:java-maven-$version-$BUILD_NUMBER"
                 }
             }
         }
-        
+
         stage('build jar') {
             steps {
                 script {
