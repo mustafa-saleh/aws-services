@@ -35,6 +35,8 @@ AWS, Jenkins, Docker, Linux, Git, Java, Maven, Docker Hub, Amazon ECR
 - CI step: Build and push Docker image to Docker Hub
 - CD step: Deploy new application version with Docker Compose
 - CD step: Commit the version update
+- Create private Docker registry on AWS (Amazon ECR)
+- Tag and Push Docker image to this private repository
 
 ### Implementation
 
@@ -270,7 +272,7 @@ Let's add the new pipeline stages "increment version" & "commit version update" 
                     def matcher = readFile('pom.xml') =~ '<version>(.+)</version>'
                     def version = matcher[0][1]
                     echo "new version is: ${version}"
-                    env.IMAGE_NAME = "$version-$BUILD_NUMBER"
+                    env.IMAGE_NAME = "mustafa199b/demo:java-maven-$version-$BUILD_NUMBER"
                 }
             }
         }
@@ -320,3 +322,39 @@ Delete the environment variable IMAGE hardcoded in the pipeline since it's now g
 ```
 
 In github repo, create access token to grant Jenkins access to commit the version update to the repository & create the credentials "github-pass-token" in Jenkins using the token.
+
+#### Create Repository on AWS and Push to Private Docker Registry
+
+Best practice is to create a dedicated AWS ECR repository for each distinct container image or microservice application.
+
+To work with AWS ECR, let's install the AWS CLI version 2. Installation instructions can be found in URL "https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html". AWS CLI can also be installed via homebrew for MAC Book devices
+
+```bash
+brew update
+brew install awscli
+aws --version
+```
+
+Once CLI is installed, authenticate to access your account 
+
+```bash
+# enter access key id, secret access key, region, format (json) when prompted. running this will create a directory in home ".aws" with "config" and "credentials" files
+aws configure
+```
+
+Let's build a docker from the project [js-app](https://github.com/mustafa-saleh/demo-js-app) and push it to the registry.
+
+```bash
+docker build -t my-app:1.0 .
+```
+
+In AWS console, select the ECR service & create the new registry "my-app", click the "View Push Commands" button for instructions on how to tag the docker image and push it to the registry.
+
+```bash
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <account-id>.dkr.ecr.us-east-1.amazonaws.com
+docker tag my-app:1.0 <account-id>.dkr.ecr.us-east-1.amazonaws.com/my-app:1.0
+docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/my-app:1.0
+```
+
+Check that the image has been pushed to the registry
+![AWS ECR](./images/aws_ecr.png)
