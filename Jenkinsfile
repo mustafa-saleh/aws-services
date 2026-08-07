@@ -13,8 +13,23 @@ pipeline {
         maven 'maven-3.9.16'
     }
 
-    environment {
-        IMAGE_NAME = 'mustafa199b/demo:java-maven-1.0'
+    // environment {
+    //     IMAGE_NAME = 'mustafa199b/demo:java-maven-1.0'
+    // }
+
+    stage('increment version') {
+        steps {
+            script {
+                echo "incrementing the version..."
+                sh 'mvn build-helper:parse-version versions:set \
+                -DnewVersion=\\\${parsedVersion.majorVersion}.\\\${parsedVersion.minorVersion}.\\\${parsedVersion.nextIncrementalVersion} \
+                versions:commit'
+                def matcher = readFile('pom.xml') =~ '<version>(.+)</version>'
+                def version = matcher[0][1]
+                echo "new version is: ${version}"
+                env.IMAGE_NAME = "$version-$BUILD_NUMBER"
+            }
+        }
     }
 
     stages {
@@ -52,6 +67,22 @@ pipeline {
                     }
                 }
             }               
+        }
+
+        stage('commit version update') {
+            steps {
+                script {
+                    echo "incrementing the version..."
+                    withCredentials([gitUsernamePassword(credentialsId: 'github-pass-token', gitToolName: 'Default')]) {
+                        sh 'git config --global user.email "jenkins@example.com"'
+                        sh 'git config --global user.name "Jenkins"'
+                        
+                        sh 'git add .'
+                        sh "git commit -m \"ci: Increment version to ${IMAGE_NAME}\""
+                        sh 'git push origin HEAD:main'
+                    }
+                }
+            }
         }
     }
 }

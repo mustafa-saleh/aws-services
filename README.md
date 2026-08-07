@@ -30,6 +30,11 @@ AWS, Jenkins, Docker, Linux, Git, Java, Maven, Docker Hub, Amazon ECR
 - Create docker-compose.yml file that deploys our web application image
 - Configure Jenkins pipeline to deploy newly built image using Docker Compose on EC2 server
 - Improvement: Extract multiple Linux commands that are executed on remote server into a separate shell script and execute the script from Jenkinsfile
+- CI step: Increment version
+- CI step: Build artifact for Java Maven application
+- CI step: Build and push Docker image to Docker Hub
+- CD step: Deploy new application version with Docker Compose
+- CD step: Commit the version update
 
 ### Implementation
 
@@ -244,3 +249,74 @@ We can also refactor the deployment stage to remove any duplicate syntax like be
         }
 ...
 ```
+
+#### Complete the CI/CD Pipeline (Docker-Compose, Dynamic Versioning)
+
+To implement dynamic versioning, refer to the section [Dynamically Increment Application Version in Jenkins Pipeline](https://github.com/mustafa-saleh/demo-module-8-build-automation-and-ci-cd-with-jenkins/blob/main/README.md#dynamically-increment-application-version-in-jenkins-pipeline) in Module 8 Jenkins CI/CD.
+
+Let's add the new pipeline stages "increment version" & "commit version update" as below
+
+```groovy
+...
+        stage('increment version') {
+            steps {
+                script {
+                    echo "incrementing the version..."
+                    // increment patch number
+                    sh 'mvn build-helper:parse-version versions:set \
+                    -DnewVersion=\\\${parsedVersion.majorVersion}.\\\${parsedVersion.minorVersion}.\\\${parsedVersion.nextIncrementalVersion} \
+                    versions:commit'
+                    // parse the updated file to get the new version and save it as IMAGE_NAME for following stages
+                    def matcher = readFile('pom.xml') =~ '<version>(.+)</version>'
+                    def version = matcher[0][1]
+                    echo "new version is: ${version}"
+                    env.IMAGE_NAME = "$version-$BUILD_NUMBER"
+                }
+            }
+        }
+...
+...
+        stage('commit version update') {
+            steps {
+                script {
+                    echo "incrementing the version..."
+                    withCredentials([gitUsernamePassword(credentialsId: 'github-pass-token', gitToolName: 'Default')]) {
+                        sh 'git config --global user.email "jenkins@example.com"'
+                        sh 'git config --global user.name "Jenkins"'
+                        
+                        sh 'git add .'
+                        sh "git commit -m \"ci: Increment version to ${IMAGE_NAME}\""
+                        sh 'git push origin HEAD:main'
+                    }
+                }
+            }
+        }
+...
+```
+
+Remove any hardcoded versions in the docker file, and use regular expressions to get the latest build
+
+```dockerfile
+FROM amazoncorretto:17-alpine-jdk
+
+EXPOSE 8080
+
+# COPY ./target/java-maven-app-1.1.0-SNAPSHOT.jar /usr/app/
+COPY ./target/java-maven-app-*.jar /usr/app/
+WORKDIR /usr/app
+
+# ENTRYPOINT ["java", "-jar", "java-maven-app-1.1.0-SNAPSHOT.jar"]
+CMD java -jar java-maven-app-*.jar
+```
+
+Delete the environment variable IMAGE hardcoded in the pipeline since it's now getting set in "increment version" stage
+
+```groovy
+...
+    // environment {
+    //     IMAGE_NAME = 'mustafa199b/demo:java-maven-1.0'
+    // }
+...
+```
+
+In github repo, create access token to grant Jenkins access to commit the version update to the repository & create the credentials "github-pass-token" in Jenkins using the token.
