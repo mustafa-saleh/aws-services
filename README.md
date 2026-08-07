@@ -37,6 +37,11 @@ AWS, Jenkins, Docker, Linux, Git, Java, Maven, Docker Hub, Amazon ECR
 - CD step: Commit the version update
 - Create private Docker registry on AWS (Amazon ECR)
 - Tag and Push Docker image to this private repository
+- Install & configure AWS CLI to connect to our AWS account
+- Create EC2 Instance using AWS CLI with all configurations like Security Group
+- Create SSH key pair
+- Create IAM resources like User, Group, Policy using the AWS CLI
+- List and browse AWS resources using the AWS CLI
 
 ### Implementation
 
@@ -358,3 +363,177 @@ docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/my-app:1.0
 
 Check that the image has been pushed to the registry
 ![AWS ECR](./images/aws_ecr.png)
+
+#### Interacting with AWS CLI
+
+##### Create EC2 Instance using AWS CLI with all configurations like Security Group
+
+To create an EC2 instance using the AWS CLI, the following command can be used
+
+```bash
+aws ec2 run-instances \
+--image-id "YOUR_AMI_ID" \
+--count "ENTER_NUMBER" \
+--instance-type "YOUR_INSTANCE_TYPE" \
+--key-name "YOUR_KEY_NAME" \
+--security-group-ids "YOUR_SECURITY_GROUP_ID" \
+--subnet-id "YOUR_SUBNET_ID"
+```
+
+We can either obtain the value for the above params from the AWS console, or we can use the CLI.
+
+To obtain the image id & instance type of an existing instance 
+
+```bash
+aws ec2 describe-instances --instance-ids i-0123456789abcdef0 --query "Reservations[*].Instances[*].ImageId" --output text
+# output ami-0bdc7d025135d7b49
+
+aws ec2 describe-instances --instance-ids i-1234567890abcdef0 --query "Reservations[*].Instances[*].InstanceType" --output text
+# output t2.micro
+```
+
+To create a new key-pair 
+
+```bash
+aws ec2 create-key-pair --key-name awsCliKey --query 'KeyMaterial' --output text > awsCliKey.pem
+# output file awsCliKey.pem
+```
+
+To create a new security group
+
+```bash
+# get the vpcId - vpc-02c8f357bc6b6c5b2
+aws ec2 describe-vpcs
+
+# create the security group, return group id - sg-0804e380deab8571d
+aws ec2 create-security-group --group-name test-sg --description "test security group" --vpc-id vpc-02c8f357bc6b6c5b2
+
+# describe security groups
+aws ec2 describe-security-groups --group-ids sg-0804e380deab8571d
+
+# allow port access on 8080
+aws ec2 authorize-security-group-ingress --group-id sg-0804e380deab8571d --protocol tcp --port 8080 --cidr 0.0.0.0/0
+```
+
+To get the subnet-id 
+
+```bash
+aws ec2 describe-subnets --filters Name="vpc-id",Values="vpc-02c8f357bc6b6c5b2"
+# output subnet-04b0f8966e8278fd5
+```
+
+Now let's create the EC2 instance with all the params
+
+```bash
+aws ec2 run-instances \
+--image-id ami-0bdc7d025135d7b49 \
+--count 1 \
+--instance-type t2.micro \
+--key-name awsCliKey \
+--security-group-ids sg-0804e380deab8571d \
+--subnet-id subnet-04b0f8966e8278fd5
+```
+
+##### Create IAM Resources like User, Group, Policy Using the AWS CLI
+
+Create an IAM group & user
+
+```bash
+aws iam create-group --group-name test_gp
+aws iam create-user --user-name test_user
+aws iam add-user-to-group --user-name test_user --group-name test_gp
+aws iam get-group --group-name test_gp
+```
+
+To assign the group permissions to work with EC2 instances, we can use the below
+
+```bash
+# A policy is a group of permissions
+# to get the policy identifier (ARN), check console -> IAM -> Policy and search EC2. Choose the AmazonEC2FullAccess policy.
+# Now you can either copy the ARN from the console or use the policy name to get it from the CLI
+# ARN arn:aws:iam::aws:policy/AmazonEC2FullAccess
+aws iam list-policies --query 'Policies[?PolicyName==`AmazonEC2FullAccess`].Arn' --output text
+
+aws iam attach-group-policy --group-name test_gp --policy-arn arn:aws:iam::aws:policy/AmazonEC2FullAccess
+aws iam list-attached-group-policies --group-name test_gp
+```
+
+Create credentials for the new user to access the console & use the CLI. To access the console, we need to create a login profile for the user 
+
+```bash
+aws iam create-login-profile --user-name test_user --password StrongPwd! --password-reset-required
+aws iam get-user --user-name test_user
+```
+
+Once the user sign in to the console he'll be prompted to change the password, let's create a policy to grant the user permission to change the password.
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "iam:changePassword"
+            ],
+            "Resource": [
+                "arn:aws:iam::<account-id>:user/${aws:username}"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "iam:GetAccountPasswordPolicy"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
+
+Apply the policy with the following
+
+```bash
+# get the policy ARN arn:aws:iam::<account-id>:policy/changePwdPolicy
+aws iam create-policy --policy-name changePwdPolicy --policy-document file://changePwdPolicy.json
+
+aws iam attach-group-policy --group-name test_gp --policy-arn arn:aws:iam::<account-id>:policy/changePwdPolicy
+aws iam list-attached-group-policies --group-name test_gp
+```
+
+Now navigate to the browser and login to AWS console with the new user.
+
+For the new user to use the CLI, we need to create access keys
+
+```bash
+# get access key id & secret access key
+aws iam create-access-key --user-name test_user
+```
+
+Now you can start using the AWS CLI with the newly created user. To switch the user in the cli 
+
+- run `aws configure` again which will override the default credentials in home directory (~/.aws/)
+- export env variables `export AWS_ACCESS_KEY_ID=<VALUE>` & `export AWS_SECRET_ACCESS_KEY=<VALUE>` for current session, to change region `export AWS_DEFAULT_REGION=<VALUE>`
+
+To cleanup execute delete commands for the resources created in reverse order `aws ec2 help | grep delete`
+
+```bash
+aws iam remove-user-from-group --group-name test_gp --user-name test_user
+aws iam delete-login-profile --user-name test_user
+aws iam delete-access-key --access-key-id AKIA5IJOW5DDO3BQ2QPO --user-name test_user
+aws iam delete-user --user-name test_user
+ 
+aws iam list-attached-group-policies --group-name test_gp
+aws iam detach-group-policy --group-name test_gp --policy-arn arn:aws:iam::<account-id>:policy/changePwdPolicy
+aws iam detach-group-policy --group-name test_gp --policy-arn arn:aws:iam::aws:policy/AmazonEC2FullAccess
+aws iam delete-group --group-name test_gp
+
+aws iam delete-policy --policy-arn arn:aws:iam::<account-id>:policy/changePwdPolicy
+
+aws ec2 terminate-instances --instance-ids i-0678c9dada6e56f9b
+
+aws ec2 describe-security-groups --group-ids sg-0804e380deab8571d
+aws ec2 delete-security-group --group-name test-sg
+
+aws ec2 delete-key-pair --key-name awsCliKey
+```
