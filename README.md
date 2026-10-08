@@ -1,8 +1,6 @@
 # AWS Services
 
-This project is for the DevOps Bootcamp demo for:
-
-AWS Services - [DevOps Bootcamp](https://techworld-with-nana.teachable.com/p/devops-bootcamp)
+AWS (Amazon Web Services) is a cloud computing platform that provides a wide range of services, including computing power, storage, and databases. It allows businesses and developers to build and deploy applications in the cloud without the need for physical infrastructure.
 
 ## Demo Project
 
